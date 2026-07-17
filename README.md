@@ -24,8 +24,23 @@ real KataGo analysis rather than invented evaluations.
   - **Chat** — ask the coach anything about the position.
 - **Auto-comment toggle.** Have the coach comment automatically after each of
   your moves.
-- **Live winrate and score bar** under the board, always from the current
+- **Live winrate and score bar** under the board, plus capture counts, and a
+  final result when the game ends (KataGo's score estimate after two passes,
+  or e.g. "W+R" after a resignation).
+- **Winrate graph** of the whole game under the board — click any point to
+  jump to that position.
+- **Game review navigation.** Step through the game move by move (◀ ▶) while
+  the live game waits; the board, winrate, and territory update to the viewed
   position.
+- **Territory overlay.** Toggle KataGo's live ownership map to see which areas
+  each side controls.
+- **Undo and Resign.** Take back your last move (and the AI's reply), or end
+  the game.
+- **SGF export.** Download the game to review in other tools or upload to Go
+  servers.
+- **Move numbers toggle** on the stones, and an optional **confirm-move mode**
+  (click once to preview, click again to submit — prevents misclicks;
+  right-click cancels).
 - **Pick the coach model** (Sonnet, Opus, or Haiku) from a dropdown; Sonnet is
   the default.
 
@@ -96,6 +111,12 @@ In the browser: choose board size, opponent rank, and your colour, then click
 **New game**. Click an intersection to play. Use the coach buttons or the chat
 box at any time, and flip the coach model with the dropdown if you want a
 stronger or faster coach.
+
+During and after the game: use **Undo / Resign / SGF** in the status bar, the
+◀ ▶ buttons (or a click on the winrate graph) to review earlier positions, and
+the **Confirm moves / Move numbers / Territory** checkboxes to tune the board.
+Reviewing never alters the game — jump back to the latest move to keep
+playing.
 
 ## Configuration
 

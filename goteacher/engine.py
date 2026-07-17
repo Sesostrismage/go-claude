@@ -67,6 +67,7 @@ class KataGo:
         game: Game,
         max_visits=ANALYSIS_VISITS,
         include_policy=False,
+        include_ownership=False,
         human_profile=None,
     ):
         with self.lock:
@@ -87,6 +88,8 @@ class KataGo:
             }
             if include_policy:
                 q["includePolicy"] = True
+            if include_ownership:
+                q["includeOwnership"] = True
             if human_profile and self.has_human_model:
                 q["overrideSettings"] = {"humanSLProfile": human_profile}
             self.proc.stdin.write(json.dumps(q) + "\n")

@@ -138,10 +138,23 @@ Ground everything you say in this analysis - do not invent evaluations. Be conci
         prompt = self._base_context(game, snapshots, point_loss)
         prompt += "\n\nTask: " + instructions[mode]
         messages = self.chat_history[-6:] + [{"role": "user", "content": prompt}]
-        resp = self.client.messages.create(
-            model=model, max_tokens=500, messages=messages
-        )
-        text = "".join(b.text for b in resp.content if hasattr(b, "text")).strip()
+
+        # Occasionally the API returns an empty completion or one cut short by
+        # the token limit (a truncated, mid-sentence reply). Retry once on those
+        # unambiguous cases, bumping the budget in case length was the cause.
+        text = ""
+        for max_tokens in (500, 800):
+            resp = self.client.messages.create(
+                model=model, max_tokens=max_tokens, messages=messages
+            )
+            text = "".join(b.text for b in resp.content if hasattr(b, "text")).strip()
+            if text and resp.stop_reason != "max_tokens":
+                break
+
+        if not text:
+            # Don't store a failed turn in history - it would poison follow-ups.
+            return "The coach glitched on that one - please ask again."
+
         # Stamp history entries with the move count so earlier answers (about
         # earlier positions) can't be mistaken for current-position advice.
         stamp = f"(asked at move {len(game.moves)}) "

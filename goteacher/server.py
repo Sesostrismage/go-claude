@@ -5,7 +5,7 @@ import sys
 import threading
 
 try:
-    from flask import Flask, jsonify, render_template, request
+    from flask import Flask, Response, jsonify, render_template, request
 except ImportError:
     print("Missing dependency: pip install flask")
     sys.exit(1)
@@ -22,6 +22,19 @@ game = None
 state_lock = threading.Lock()
 
 
+def game_result():
+    """Result string once the game is over, else None."""
+    if not game.game_over:
+        return None
+    if game.result:
+        return game.result
+    if game.analysis_history:
+        lead = game.analysis_history[-1]["rootInfo"].get("scoreLead", 0)
+        winner = "B" if lead >= 0 else "W"
+        return f"{winner}+{abs(lead):.1f} (estimate)"
+    return None
+
+
 def board_state(extra=None):
     root = game.analysis_history[-1]["rootInfo"] if game.analysis_history else {}
     d = {
@@ -32,8 +45,17 @@ def board_state(extra=None):
         "moves": game.moves,
         "captures": game.captures,
         "game_over": game.game_over,
+        "result": game_result(),
         "winrate_black": root.get("winrate"),
         "score_lead_black": root.get("scoreLead"),
+        "winrates": [
+            a.get("rootInfo", {}).get("winrate") for a in game.analysis_history
+        ],
+        "ownership": (
+            game.analysis_history[-1].get("ownership")
+            if game.analysis_history
+            else None
+        ),
         "last_move": game.moves[-1][1] if game.moves else None,
     }
     if extra:
@@ -42,9 +64,26 @@ def board_state(extra=None):
 
 
 def analyze_and_store():
-    a = engine.query(game)
+    a = engine.query(game, include_ownership=True)
     game.analysis_history.append(a)
     return a
+
+
+def replay_moves(moves):
+    """Rebuild a Game with the current game's settings from a move prefix."""
+    g = Game(
+        size=game.size,
+        komi=game.komi,
+        player_color=game.player_color,
+        rank=game.rank,
+    )
+    for c, m in moves:
+        if m == "pass":
+            g.play(is_pass=True)
+        else:
+            x, y = g.gtp_to_coord(m)
+            g.play(x, y)
+    return g
 
 
 def user_move_indices():
@@ -180,6 +219,88 @@ def coach_route():
             loss = None
         text = coach.ask(mode, game, snaps, loss, question, model=model)
         return jsonify({"text": text})
+
+
+@app.route("/undo", methods=["POST"])
+def undo():
+    """Take back the player's most recent move (and the AI's reply to it)."""
+    global game
+    with state_lock:
+        user_letter = "B" if game.player_color == "black" else "W"
+        idx = None
+        for i in range(len(game.moves) - 1, -1, -1):
+            if game.moves[i][0] == user_letter:
+                idx = i
+                break
+        if idx is None:
+            return jsonify({"error": "Nothing to undo yet."})
+        kept = game.moves[:idx]
+        analyses = game.analysis_history[: idx + 1]
+        new_game = replay_moves(kept)
+        new_game.analysis_history = analyses
+        game = new_game
+        return jsonify(board_state())
+
+
+@app.route("/resign", methods=["POST"])
+def resign():
+    with state_lock:
+        if not game.game_over:
+            game.game_over = True
+            game.result = "W+R" if game.player_color == "black" else "B+R"
+        return jsonify(board_state())
+
+
+@app.route("/position")
+def position():
+    """Read-only view of the position after the first k moves (for review)."""
+    with state_lock:
+        k = max(0, min(int(request.args.get("k", 0)), len(game.moves)))
+        g = replay_moves(game.moves[:k])
+        a = (
+            game.analysis_history[k]
+            if k < len(game.analysis_history)
+            else None
+        ) or {}
+        return jsonify(
+            {
+                "k": k,
+                "board": g.board,
+                "last_move": g.moves[-1][1] if g.moves else None,
+                "winrate_black": a.get("rootInfo", {}).get("winrate"),
+                "score_lead_black": a.get("rootInfo", {}).get("scoreLead"),
+                "ownership": a.get("ownership"),
+            }
+        )
+
+
+@app.route("/sgf")
+def sgf():
+    """Download the current game as an SGF file."""
+    with state_lock:
+        rank_label = game.rank.replace("rank_", "")
+        player, ai = "Player", f"KataGo ({rank_label})"
+        pb, pw = (player, ai) if game.player_color == "black" else (ai, player)
+        header = (
+            f"(;FF[4]GM[1]CA[UTF-8]AP[GoTeacher]SZ[{game.size}]"
+            f"KM[{game.komi}]RU[Japanese]PB[{pb}]PW[{pw}]"
+        )
+        result = game_result()
+        if result:
+            header += f"RE[{result.replace(' (estimate)', '')}]"
+        body = ""
+        for c, m in game.moves:
+            if m == "pass":
+                coord = ""
+            else:
+                x, y = game.gtp_to_coord(m)
+                coord = chr(97 + x) + chr(97 + y)
+            body += f";{c}[{coord}]"
+        return Response(
+            header + body + ")",
+            mimetype="application/x-go-sgf",
+            headers={"Content-Disposition": "attachment; filename=go-teacher.sgf"},
+        )
 
 
 def main():
