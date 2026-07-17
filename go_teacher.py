@@ -9,9 +9,11 @@ automatically if you enable the toggle.
 
 SETUP (one time):
 1. pip install flask anthropic
-2. Download KataGo (OpenCL version for your RTX 2070 Super):
+2. Download KataGo and unzip it somewhere:
    https://github.com/lightvector/KataGo/releases
-   -> katago-vX.Y.Z-opencl-windows-x64.zip, unzip somewhere.
+   Pick the build that matches your hardware - the OpenCL build
+   (katago-vX.Y.Z-opencl-windows-x64.zip) runs on most GPUs; there are
+   also CUDA and CPU (Eigen) builds.
 3. Download two networks:
    - Main network: https://katagotraining.org/networks/
      (grab the strongest confidently-rated b18c384nbt network, .bin.gz)

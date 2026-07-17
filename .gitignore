@@ -21,3 +21,6 @@ venv.bak/
 
 # katago folder
 katago/
+
+# Runtime-generated KataGo analysis config (rewritten on every startup)
+analysis.cfg

@@ -31,8 +31,8 @@ real KataGo analysis rather than invented evaluations.
 
 ## Requirements
 
-- **Windows** with a GPU (originally set up for an RTX 2070 Super via the
-  OpenCL build of KataGo).
+- **Windows** with a reasonably modern GPU (the OpenCL build of KataGo runs on
+  most GPUs; CUDA and CPU builds are also available).
 - **Python 3.10+**.
 - Python packages: `flask` and `anthropic`.
 - **KataGo** plus two networks (see installation below).
@@ -44,7 +44,7 @@ real KataGo analysis rather than invented evaluations.
 1. **Install the Python dependencies.**
 
    ```
-   pip install flask anthropic
+   pip install -r requirements.txt
    ```
 
 2. **Download KataGo.** Grab the OpenCL Windows build from the

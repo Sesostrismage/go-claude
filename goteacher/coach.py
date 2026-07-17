@@ -58,7 +58,7 @@ class Coach:
             desc = "the EMPTY BOARD, before any move was played"
         else:
             c, m = game.moves[k - 1]
-            who = "Weppe" if c == user_letter else "the AI opponent"
+            who = "the player" if c == user_letter else "the AI opponent"
             desc = f"the position just after move {k} ({c} {m}, played by {who})"
         to_move = "Black" if k % 2 == 0 else "White"  # Black plays move 1
         return desc, to_move
@@ -67,7 +67,7 @@ class Coach:
         user_letter = "B" if game.player_color == "black" else "W"
         if game.moves:
             moves_str = ", ".join(
-                f"{i + 1}. {c} {m} ({'Weppe' if c == user_letter else 'opponent'})"
+                f"{i + 1}. {c} {m} ({'the player' if c == user_letter else 'opponent'})"
                 for i, (c, m) in enumerate(game.moves)
             )
         else:
@@ -87,15 +87,15 @@ class Coach:
             else "n/a"
         )
         perspective = (
-            "Weppe is BLACK, so higher Black winrate = better for Weppe."
+            "The player is BLACK, so higher Black winrate = better for the player."
             if game.player_color == "black"
-            else "Weppe is WHITE, so LOWER Black winrate = better for Weppe (e.g. Black winrate 30% means Weppe is clearly winning). A negative Black score lead means Weppe (White) is ahead."
+            else "The player is WHITE, so LOWER Black winrate = better for the player (e.g. Black winrate 30% means the player is clearly winning). A negative Black score lead means the player (White) is ahead."
         )
         sections = []
         for k, a in snapshots:
             desc, to_move = self._describe_position(game, k)
             current_note = (
-                " This is the CURRENT position: these numbers are what Weppe's on-screen winrate bar and score show right now."
+                " This is the CURRENT position: these numbers are what the player's on-screen winrate bar and score show right now."
                 if k == len(game.moves)
                 else ""
             )
@@ -104,22 +104,22 @@ class Coach:
                 f"{self._fmt_analysis(a)}"
             )
         analysis_block = "\n\n".join(sections) if sections else "No analysis available."
-        return f"""You are a friendly, direct Go teacher coaching player "Weppe" during a live game on a {game.size}x{game.size} board. Weppe plays {game.player_color}. The opponent is an AI playing at human {game.rank.replace('rank_', '')} level. Komi {game.komi}.
+        return f"""You are a friendly, direct Go teacher coaching the player during a live game on a {game.size}x{game.size} board. The player plays {game.player_color}. The opponent is an AI playing at human {game.rank.replace('rank_', '')} level. Komi {game.komi}.
 
 Current board (the position after ALL moves listed below):
 {game.ascii_board()}
 
 Move history, in the order played, each tagged with who played it:
 {moves_str}
-Weppe's most recent move: {user_move or 'none yet'} (estimated cost: {loss_str})
+The player's most recent move: {user_move or 'none yet'} (estimated cost: {loss_str})
 The opponent's reply after it: {opp_reply or 'none yet'}
 
-IMPORTANT: Moves marked "{user_letter}" are Weppe's; the other color is the AI opponent's. Never attribute the opponent's moves to Weppe or vice versa. When discussing an earlier position, remember which stones had NOT yet been played at that time - e.g. in the position before Weppe's most recent move, neither that move nor the opponent's reply was on the board.
+IMPORTANT: Moves marked "{user_letter}" are the player's; the other color is the AI opponent's. Never attribute the opponent's moves to the player or vice versa. When discussing an earlier position, remember which stones had NOT yet been played at that time - e.g. in the position before the player's most recent move, neither that move nor the opponent's reply was on the board.
 
 {analysis_block}
 
 All winrates and score leads are from BLACK's perspective. {perspective}
-When citing winrates, always say which position they belong to (before your move / after your move / now). The numbers Weppe sees on screen belong to the CURRENT position only.
+When citing winrates, always say which position they belong to (before your move / after your move / now). The numbers the player sees on screen belong to the CURRENT position only.
 Ground everything you say in this analysis - do not invent evaluations. Be concise (2-4 sentences unless asked for more). Talk like a teacher at the board, not a textbook."""
 
     def ask(self, mode, game, snapshots, point_loss, question=None, model=None):
@@ -130,10 +130,10 @@ Ground everything you say in this analysis - do not invent evaluations. Be conci
         # Only accept models offered in the UI; anything else falls back to the default.
         model = model if model in COACH_MODELS.values() else DEFAULT_COACH_MODEL
         instructions = {
-            "comment": "Comment on Weppe's most recent move: was it good, questionable, or a mistake? Why? Reference what the position needed.",
-            "hint": "Weppe wants a hint for the CURRENT position (it is their turn). Do NOT reveal any specific move or coordinates. Give a Socratic, directional hint - e.g. which area deserves attention, or what question to ask about the position.",
-            "suggest": "Suggest the best move for Weppe in the current position (use the top KataGo candidate from the CURRENT position's analysis), give its coordinates, and explain in plain terms WHY it works and what it accomplishes.",
-            "chat": f"Weppe asks: {question}",
+            "comment": "Comment on the player's most recent move: was it good, questionable, or a mistake? Why? Reference what the position needed.",
+            "hint": "The player wants a hint for the CURRENT position (it is their turn). Do NOT reveal any specific move or coordinates. Give a Socratic, directional hint - e.g. which area deserves attention, or what question to ask about the position.",
+            "suggest": "Suggest the best move for the player in the current position (use the top KataGo candidate from the CURRENT position's analysis), give its coordinates, and explain in plain terms WHY it works and what it accomplishes.",
+            "chat": f"The player asks: {question}",
         }
         prompt = self._base_context(game, snapshots, point_loss)
         prompt += "\n\nTask: " + instructions[mode]

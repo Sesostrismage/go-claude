@@ -48,12 +48,12 @@ def analyze_and_store():
 
 
 def user_move_indices():
-    """Analysis indices (before, after) surrounding Weppe's most recent move.
+    """Analysis indices (before, after) surrounding the player's most recent move.
 
     analysis_history[k] is the analysis of the position after the first k
-    moves, so for Weppe's move at game.moves[i] the position before it is
+    moves, so for the player's move at game.moves[i] the position before it is
     index i and the position after it is index i + 1. Returns (None, None)
-    if Weppe hasn't moved yet.
+    if the player hasn't moved yet.
     """
     user_letter = "B" if game.player_color == "black" else "W"
     if game.moves and game.moves[-1][0] == user_letter:
@@ -66,7 +66,7 @@ def user_move_indices():
 
 
 def point_loss_between(before, after):
-    """Point loss of Weppe's move between two analysis indices, from Weppe's
+    """Point loss of the player's move between two analysis indices, from the player's
     perspective."""
     if before is None:
         return None
@@ -80,8 +80,8 @@ def point_loss_between(before, after):
 
 
 def comment_payload():
-    """Snapshots (before Weppe's move, after it, current) plus point loss,
-    for commenting on Weppe's most recent move."""
+    """Snapshots (before the player's move, after it, current) plus point loss,
+    for commenting on the player's most recent move."""
     before, after = user_move_indices()
     cur = len(game.analysis_history) - 1
     ks = sorted({k for k in (before, after, cur) if k is not None})
