@@ -8,18 +8,23 @@
 body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #f2f0ea; color: #222; display: flex; height: 100vh; overflow: hidden; }
 #left { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; min-width: 0; }
 #board-wrap { position: relative; }
-canvas { background: #dcb35c; border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); cursor: pointer; }
-#status-bar { margin-top: 10px; font-size: 13px; color: #666; display: flex; gap: 20px; align-items: center; }
-#winrate-wrap { width: 180px; height: 8px; background: #fff; border-radius: 4px; overflow: hidden; border: 1px solid #ccc; }
+canvas#board { background: #dcb35c; border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); cursor: pointer; }
+#status-bar { margin-top: 10px; font-size: 13px; color: #666; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; justify-content: center; }
+#winrate-wrap { width: 140px; height: 8px; background: #fff; border-radius: 4px; overflow: hidden; border: 1px solid #ccc; }
 #winrate-bar { height: 100%; background: #222; width: 50%; transition: width 0.4s; }
+#nav-bar { margin-top: 6px; font-size: 13px; color: #666; display: flex; gap: 6px; align-items: center; }
+#graph { margin-top: 8px; background: #fff; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; }
 #right { width: 400px; background: #fff; border-left: 1px solid #ddd; display: flex; flex-direction: column; }
-#controls { padding: 12px 14px; border-bottom: 1px solid #eee; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#controls { padding: 12px 14px 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#options { padding: 0 14px 10px; border-bottom: 1px solid #eee; display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: #666; align-items: center; }
 select, button { font-family: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; }
 button:hover { background: #f5f5f5; }
 button.primary { background: #222; color: #fff; border-color: #222; }
 button.primary:hover { background: #444; }
+button.small { padding: 3px 8px; font-size: 12px; }
 #coach-buttons { padding: 10px 14px; border-bottom: 1px solid #eee; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .toggle-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #666; margin-left: auto; }
+label.opt { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 #chat { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .msg { font-size: 13.5px; line-height: 1.55; padding: 8px 12px; border-radius: 10px; max-width: 92%; white-space: pre-wrap; }
 .msg.coach { background: #f0efe9; align-self: flex-start; }
@@ -35,13 +40,25 @@ button.primary:hover { background: #444; }
   <div id="board-wrap"><canvas id="board" width="640" height="640"></canvas></div>
   <div id="status-bar">
     <span id="turn-label">-</span>
+    <span id="caps-label"></span>
     <span style="font-weight:600;font-size:12px">B</span>
     <div id="winrate-wrap" title="Win probability"><div id="winrate-bar"></div></div>
     <span style="font-weight:600;font-size:12px;color:#999">W</span>
-    <span id="winrate-label" style="min-width:70px"></span>
+    <span id="winrate-label" style="min-width:56px"></span>
     <span id="score-label"></span>
-    <button onclick="passMove()">Pass</button>
+    <button class="small" onclick="passMove()">Pass</button>
+    <button class="small" onclick="undoMove()">Undo</button>
+    <button class="small" onclick="resignGame()">Resign</button>
+    <button class="small" onclick="downloadSgf()" title="Download the game as an SGF file">SGF</button>
   </div>
+  <div id="nav-bar">
+    <button class="small" onclick="navTo(0)" title="First move">|&#9664;</button>
+    <button class="small" onclick="navBy(-1)" title="Previous move">&#9664;</button>
+    <span id="nav-label">0 / 0</span>
+    <button class="small" onclick="navBy(1)" title="Next move">&#9654;</button>
+    <button class="small" onclick="navToLive()" title="Latest move">&#9654;|</button>
+  </div>
+  <canvas id="graph" width="640" height="70" title="Black winrate per move - click to view a position"></canvas>
 </div>
 <div id="right">
   <div id="controls">
@@ -59,6 +76,11 @@ button.primary:hover { background: #444; }
     </select>
     <select id="color"><option value="black" selected>Play Black</option><option value="white">Play White</option></select>
     <button class="primary" onclick="newGame()">New game</button>
+  </div>
+  <div id="options">
+    <label class="opt"><input type="checkbox" id="confirm-toggle">Confirm moves</label>
+    <label class="opt"><input type="checkbox" id="numbers-toggle" onchange="drawBoard()">Move numbers</label>
+    <label class="opt"><input type="checkbox" id="territory-toggle" onchange="drawBoard()">Territory</label>
   </div>
   <div id="coach-buttons">
     <button onclick="coachAction('comment')">Comment</button>
@@ -81,12 +103,25 @@ button.primary:hover { background: #444; }
   </div>
 </div>
 <script>
-let S = null;
+let S = null;          // live game state from the server
+let viewData = null;   // non-null while reviewing an earlier position
+let pending = null;    // [x, y] awaiting confirmation when "Confirm moves" is on
 let highlights = [];
 let hover = null;
 const canvas = document.getElementById('board');
 const ctx = canvas.getContext('2d');
+const graph = document.getElementById('graph');
+const gctx = graph.getContext('2d');
 const COLS = 'ABCDEFGHJKLMNOPQRST';
+
+function displayK() {
+  if (viewData) return viewData.k;
+  return S ? S.moves.length : 0;
+}
+
+function gtpToXY(gtp, n) {
+  return [COLS.indexOf(gtp[0]), n - parseInt(gtp.slice(1))];
+}
 
 function extractCoords(text) {
   if (!S) return [];
@@ -127,6 +162,10 @@ function addMsg(text, cls, label) {
 
 function drawBoard() {
   if (!S) return;
+  const board = viewData ? viewData.board : S.board;
+  const lastMove = viewData ? viewData.last_move : S.last_move;
+  const ownership = viewData ? viewData.ownership : S.ownership;
+  const k = displayK();
   const n = S.size, W = canvas.width;
   const pad = W / (n + 1), step = (W - 2 * pad) / (n - 1);
   ctx.clearRect(0, 0, W, W);
@@ -149,20 +188,49 @@ function drawBoard() {
   for (const sy of stars) for (const sx of stars) {
     ctx.beginPath(); ctx.arc(pad + sx*step, pad + sy*step, 3, 0, 7); ctx.fill();
   }
+  // Territory overlay (KataGo ownership, black-positive), under the stones.
+  if (document.getElementById('territory-toggle').checked && ownership) {
+    const half = step * 0.18;
+    for (let i = 0; i < ownership.length; i++) {
+      const o = ownership[i];
+      if (o == null || Math.abs(o) < 0.1) continue;
+      const ox = i % n, oy = Math.floor(i / n);
+      const cx = pad + ox*step, cy = pad + oy*step;
+      ctx.globalAlpha = Math.min(0.75, Math.abs(o));
+      ctx.fillStyle = o > 0 ? '#111' : '#fafafa';
+      ctx.fillRect(cx - half, cy - half, half*2, half*2);
+      ctx.globalAlpha = 1;
+    }
+  }
+  // Move numbers: the number shown is the LAST move played on that point
+  // within the displayed prefix (correct even after captures/replays).
+  let numMap = null;
+  if (document.getElementById('numbers-toggle').checked) {
+    numMap = {};
+    S.moves.slice(0, k).forEach((mv, i) => {
+      if (mv[1] !== 'pass') {
+        const [mx, my] = gtpToXY(mv[1], n);
+        numMap[mx + ',' + my] = i + 1;
+      }
+    });
+  }
   const r = step * 0.47;
   let lastCoord = null;
-  if (S.last_move && S.last_move !== 'pass') {
-    lastCoord = [COLS.indexOf(S.last_move[0]), n - parseInt(S.last_move.slice(1))];
-  }
+  if (lastMove && lastMove !== 'pass') lastCoord = gtpToXY(lastMove, n);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const v = S.board[y][x];
+    const v = board[y][x];
     if (!v) continue;
     const cx = pad + x*step, cy = pad + y*step;
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7);
     ctx.fillStyle = v === 1 ? '#111' : '#fafafa';
     ctx.fill();
     ctx.strokeStyle = '#00000060'; ctx.stroke();
-    if (lastCoord && lastCoord[0] === x && lastCoord[1] === y) {
+    const num = numMap && numMap[x + ',' + y];
+    if (num) {
+      ctx.fillStyle = v === 1 ? '#fff' : '#111';
+      ctx.font = `${Math.max(9, step * 0.34)}px sans-serif`;
+      ctx.fillText(String(num), cx, cy);
+    } else if (lastCoord && lastCoord[0] === x && lastCoord[1] === y) {
       ctx.beginPath(); ctx.arc(cx, cy, r*0.45, 0, 7);
       ctx.strokeStyle = v === 1 ? '#fff' : '#111'; ctx.lineWidth = 2; ctx.stroke();
       ctx.lineWidth = 1;
@@ -177,7 +245,22 @@ function drawBoard() {
     ctx.lineWidth = 1;
   }
   const myColor = S.player_color === 'black' ? 1 : 2;
-  if (hover && !S.game_over && S.to_move === myColor && S.board[hover[1]][hover[0]] === 0) {
+  // Pending stone awaiting confirmation.
+  if (pending && !viewData && !S.game_over) {
+    const cx = pad + pending[0]*step, cy = pad + pending[1]*step;
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7);
+    ctx.fillStyle = myColor === 1 ? '#111' : '#fafafa';
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = 'rgba(180, 60, 40, 0.9)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, 7); ctx.stroke();
+    ctx.setLineDash([]); ctx.lineWidth = 1;
+  }
+  if (hover && !viewData && !S.game_over && S.to_move === myColor
+      && board[hover[1]][hover[0]] === 0
+      && !(pending && pending[0] === hover[0] && pending[1] === hover[1])) {
     const cx = pad + hover[0]*step, cy = pad + hover[1]*step;
     ctx.globalAlpha = 0.45;
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7);
@@ -186,18 +269,85 @@ function drawBoard() {
     ctx.strokeStyle = '#00000060'; ctx.stroke();
     ctx.globalAlpha = 1;
   }
-  document.getElementById('turn-label').textContent =
-    S.game_over ? 'Game over' : (S.to_move === 1 ? 'Black to move' : 'White to move');
-  if (S.winrate_black != null) {
-    const wb = S.winrate_black * 100;
+  updateStatus();
+  drawGraph();
+}
+
+function updateStatus() {
+  if (!S) return;
+  const k = displayK(), N = S.moves.length;
+  const turn = document.getElementById('turn-label');
+  if (viewData) {
+    turn.textContent = `Viewing move ${k}/${N}`;
+  } else if (S.game_over) {
+    turn.textContent = 'Game over' + (S.result ? ' - ' + S.result : '');
+  } else {
+    turn.textContent = S.to_move === 1 ? 'Black to move' : 'White to move';
+  }
+  document.getElementById('caps-label').textContent =
+    `Caps B ${S.captures['1']} / W ${S.captures['2']}`;
+  document.getElementById('nav-label').textContent = `${k} / ${N}`;
+  const wr = viewData ? viewData.winrate_black : S.winrate_black;
+  const lead = viewData ? viewData.score_lead_black : S.score_lead_black;
+  if (wr != null) {
+    const wb = wr * 100;
     document.getElementById('winrate-bar').style.width = wb.toFixed(1) + '%';
     document.getElementById('winrate-label').textContent =
       wb >= 50 ? `B ${wb.toFixed(0)}%` : `W ${(100 - wb).toFixed(0)}%`;
-    const lead = S.score_lead_black;
+  }
+  if (lead != null) {
     document.getElementById('score-label').textContent =
       (lead >= 0 ? 'B' : 'W') + '+' + Math.abs(lead).toFixed(1);
   }
 }
+
+function drawGraph() {
+  const W = graph.width, H = graph.height;
+  gctx.clearRect(0, 0, W, H);
+  if (!S || !S.winrates || S.winrates.length === 0) return;
+  const N = Math.max(1, S.winrates.length - 1);
+  const px = i => 6 + (i / N) * (W - 12);
+  const py = w => 6 + (1 - w) * (H - 12);
+  gctx.strokeStyle = '#ccc'; gctx.setLineDash([4, 3]);
+  gctx.beginPath(); gctx.moveTo(6, py(0.5)); gctx.lineTo(W - 6, py(0.5)); gctx.stroke();
+  gctx.setLineDash([]);
+  gctx.strokeStyle = '#222'; gctx.lineWidth = 1.5;
+  gctx.beginPath();
+  let started = false;
+  S.winrates.forEach((w, i) => {
+    if (w == null) return;
+    if (started) gctx.lineTo(px(i), py(w));
+    else { gctx.moveTo(px(i), py(w)); started = true; }
+  });
+  gctx.stroke(); gctx.lineWidth = 1;
+  const k = displayK();
+  const wk = S.winrates[k];
+  if (wk != null) {
+    gctx.fillStyle = '#b43c28';
+    gctx.beginPath(); gctx.arc(px(k), py(wk), 3.5, 0, 7); gctx.fill();
+  }
+}
+
+graph.addEventListener('click', e => {
+  if (!S || !S.winrates || S.winrates.length < 2) return;
+  const rect = graph.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (graph.width / rect.width);
+  const N = S.winrates.length - 1;
+  const i = Math.round((x - 6) / (graph.width - 12) * N);
+  navTo(Math.max(0, Math.min(i, N)));
+});
+
+async function navTo(k) {
+  if (!S) return;
+  const N = S.moves.length;
+  k = Math.max(0, Math.min(k, N));
+  if (k === N) { viewData = null; drawBoard(); return; }
+  const resp = await fetch('/position?k=' + k);
+  viewData = await resp.json();
+  drawBoard();
+}
+function navBy(d) { navTo(displayK() + d); }
+function navToLive() { viewData = null; drawBoard(); }
 
 canvas.addEventListener('mousemove', e => {
   if (!S) return;
@@ -212,8 +362,17 @@ canvas.addEventListener('mousemove', e => {
 
 canvas.addEventListener('mouseleave', () => { hover = null; drawBoard(); });
 
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  if (pending) { pending = null; drawBoard(); }
+});
+
 canvas.addEventListener('click', async e => {
   if (!S || S.game_over) return;
+  if (viewData) {
+    addMsg('Viewing an earlier position - use ▶| to return to the latest move before playing.', 'system');
+    return;
+  }
   const myColor = S.player_color === 'black' ? 1 : 2;
   if (S.to_move !== myColor) return;
   const rect = canvas.getBoundingClientRect();
@@ -222,6 +381,17 @@ canvas.addEventListener('click', async e => {
   const x = Math.round(((e.clientX-rect.left) * (W/rect.width) - pad) / step);
   const y = Math.round(((e.clientY-rect.top) * (W/rect.height) - pad) / step);
   if (x < 0 || y < 0 || x >= n || y >= n) return;
+  if (S.board[y][x] !== 0) return;
+  if (document.getElementById('confirm-toggle').checked) {
+    if (pending && pending[0] === x && pending[1] === y) {
+      pending = null;
+      await doPlay({x, y});
+    } else {
+      pending = [x, y];
+      drawBoard();
+    }
+    return;
+  }
   await doPlay({x, y});
 });
 
@@ -234,12 +404,41 @@ async function doPlay(body) {
   thinking.remove();
   if (d.error) { addMsg(d.error, 'system'); return; }
   highlights = [];
+  pending = null;
+  viewData = null;
   S = d; drawBoard();
   if (d.auto_comment) { addMsg(d.auto_comment, 'coach', 'Auto-comment'); setHighlights(d.auto_comment); }
-  if (d.game_over) addMsg('Game over (two passes). Ask the coach for a game summary!', 'system');
+  if (d.game_over) {
+    addMsg('Game over' + (d.result ? ': ' + d.result : '') + '. Ask the coach for a game summary!', 'system');
+  }
 }
 
 async function passMove() { if (S && !S.game_over) await doPlay({pass: true}); }
+
+async function undoMove() {
+  if (!S) return;
+  const resp = await fetch('/undo', {method:'POST'});
+  const d = await resp.json();
+  if (d.error) { addMsg(d.error, 'system'); return; }
+  S = d; viewData = null; pending = null; highlights = [];
+  drawBoard();
+  addMsg('Last move undone.', 'system');
+}
+
+async function resignGame() {
+  if (!S || S.game_over) return;
+  if (!confirm('Resign this game?')) return;
+  const resp = await fetch('/resign', {method:'POST'});
+  S = await resp.json();
+  viewData = null; pending = null;
+  drawBoard();
+  addMsg('You resigned. Result: ' + S.result, 'system');
+}
+
+function downloadSgf() {
+  if (!S || S.moves.length === 0) { addMsg('No moves to export yet.', 'system'); return; }
+  window.location = '/sgf';
+}
 
 async function newGame() {
   const body = {
@@ -252,6 +451,7 @@ async function newGame() {
   addMsg('Starting new game...', 'system');
   const resp = await fetch('/new_game', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   S = await resp.json();
+  viewData = null; pending = null; highlights = [];
   drawBoard();
   addMsg('Game on. Good luck!', 'system');
 }

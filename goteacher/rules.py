@@ -18,6 +18,7 @@ class Game:
         self.position_hashes = {self._hash()}
         self.consecutive_passes = 0
         self.game_over = False
+        self.result = None  # e.g. "B+R" or "B+3.5 (estimate)", set when game ends
         self.analysis_history = []  # analysis dict after each move
 
     def _hash(self):
