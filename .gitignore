@@ -16,5 +16,8 @@ venv.bak/
 # VS Code workspace settings
 *.code-workspace
 
+# VS Code folder settings
+.vscode/
+
 # katago folder
 katago/
