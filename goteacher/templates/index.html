@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Go Teacher</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, 'Segoe UI', sans-serif; background: #f2f0ea; color: #222; display: flex; height: 100vh; overflow: hidden; }
+#left { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1rem; min-width: 0; }
+#board-wrap { position: relative; }
+canvas { background: #dcb35c; border-radius: 6px; box-shadow: 0 2px 12px rgba(0,0,0,0.15); cursor: pointer; }
+#status-bar { margin-top: 10px; font-size: 13px; color: #666; display: flex; gap: 20px; align-items: center; }
+#winrate-wrap { width: 180px; height: 8px; background: #fff; border-radius: 4px; overflow: hidden; border: 1px solid #ccc; }
+#winrate-bar { height: 100%; background: #222; width: 50%; transition: width 0.4s; }
+#right { width: 400px; background: #fff; border-left: 1px solid #ddd; display: flex; flex-direction: column; }
+#controls { padding: 12px 14px; border-bottom: 1px solid #eee; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+select, button { font-family: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; }
+button:hover { background: #f5f5f5; }
+button.primary { background: #222; color: #fff; border-color: #222; }
+button.primary:hover { background: #444; }
+#coach-buttons { padding: 10px 14px; border-bottom: 1px solid #eee; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.toggle-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #666; margin-left: auto; }
+#chat { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.msg { font-size: 13.5px; line-height: 1.55; padding: 8px 12px; border-radius: 10px; max-width: 92%; white-space: pre-wrap; }
+.msg.coach { background: #f0efe9; align-self: flex-start; }
+.msg-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #999; margin-bottom: 3px; }
+.msg.user { background: #e3edf7; align-self: flex-end; }
+.msg.system { background: none; color: #999; font-size: 12px; align-self: center; }
+#chat-input-row { padding: 10px 14px; border-top: 1px solid #eee; display: flex; gap: 6px; }
+#chat-input { flex: 1; padding: 8px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; outline: none; font-family: inherit; }
+</style>
+</head>
+<body>
+<div id="left">
+  <div id="board-wrap"><canvas id="board" width="640" height="640"></canvas></div>
+  <div id="status-bar">
+    <span id="turn-label">-</span>
+    <span style="font-weight:600;font-size:12px">B</span>
+    <div id="winrate-wrap" title="Win probability"><div id="winrate-bar"></div></div>
+    <span style="font-weight:600;font-size:12px;color:#999">W</span>
+    <span id="winrate-label" style="min-width:70px"></span>
+    <span id="score-label"></span>
+    <button onclick="passMove()">Pass</button>
+  </div>
+</div>
+<div id="right">
+  <div id="controls">
+    <select id="size"><option value="9" selected>9x9</option><option value="13">13x13</option><option value="19">19x19</option></select>
+    <select id="rank">
+      <option value="rank_20k">20 kyu</option><option value="rank_18k">18 kyu</option>
+      <option value="rank_16k">16 kyu</option><option value="rank_15k" selected>15 kyu</option>
+      <option value="rank_12k">12 kyu</option>
+      <option value="rank_10k">10 kyu</option><option value="rank_8k">8 kyu</option>
+      <option value="rank_6k">6 kyu</option><option value="rank_5k">5 kyu</option>
+      <option value="rank_4k">4 kyu</option><option value="rank_3k">3 kyu</option>
+      <option value="rank_2k">2 kyu</option><option value="rank_1k">1 kyu</option>
+      <option value="rank_1d">1 dan</option><option value="rank_2d">2 dan</option>
+      <option value="rank_3d">3 dan</option>
+    </select>
+    <select id="color"><option value="black" selected>Play Black</option><option value="white">Play White</option></select>
+    <button class="primary" onclick="newGame()">New game</button>
+  </div>
+  <div id="coach-buttons">
+    <button onclick="coachAction('comment')">Comment</button>
+    <button onclick="coachAction('hint')">Hint</button>
+    <button onclick="coachAction('suggest')">Suggest move</button>
+    <select id="coach-model" title="Coach model">
+      {% for label, value in coach_models.items() %}
+      <option value="{{ value }}"{% if value == default_coach_model %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <div class="toggle-row">
+      <input type="checkbox" id="auto-toggle">
+      <label for="auto-toggle">Auto-comment</label>
+    </div>
+  </div>
+  <div id="chat"><div class="msg system">Start a new game to begin.</div></div>
+  <div id="chat-input-row">
+    <input id="chat-input" placeholder="Ask the coach anything..." onkeydown="if(event.key==='Enter')sendChat()">
+    <button onclick="sendChat()">Send</button>
+  </div>
+</div>
+<script>
+let S = null;
+let highlights = [];
+let hover = null;
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+const COLS = 'ABCDEFGHJKLMNOPQRST';
+
+function extractCoords(text) {
+  if (!S) return [];
+  const found = [];
+  const re = /\b([A-HJ-T])(1?[0-9])\b/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const x = COLS.indexOf(m[1].toUpperCase());
+    const row = parseInt(m[2]);
+    if (x >= 0 && x < S.size && row >= 1 && row <= S.size) {
+      found.push([x, S.size - row]);
+    }
+  }
+  return found;
+}
+
+function setHighlights(text) {
+  highlights = extractCoords(text);
+  drawBoard();
+}
+
+function addMsg(text, cls, label) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + cls;
+  if (label) {
+    const lab = document.createElement('div');
+    lab.className = 'msg-label';
+    lab.textContent = label;
+    el.appendChild(lab);
+  }
+  const body = document.createElement('div');
+  body.textContent = text;
+  el.appendChild(body);
+  document.getElementById('chat').appendChild(el);
+  el.scrollIntoView({behavior:'smooth', block:'nearest'});
+  return el;
+}
+
+function drawBoard() {
+  if (!S) return;
+  const n = S.size, W = canvas.width;
+  const pad = W / (n + 1), step = (W - 2 * pad) / (n - 1);
+  ctx.clearRect(0, 0, W, W);
+  ctx.strokeStyle = '#00000090'; ctx.lineWidth = 1;
+  for (let i = 0; i < n; i++) {
+    const p = pad + i * step;
+    ctx.beginPath(); ctx.moveTo(pad, p); ctx.lineTo(W - pad, p); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p, pad); ctx.lineTo(p, W - pad); ctx.stroke();
+  }
+  ctx.fillStyle = '#00000080';
+  ctx.font = `${Math.max(10, step * 0.32)}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < n; i++) {
+    const p = pad + i * step;
+    ctx.fillText(COLS[i], p, W - pad * 0.35);
+    ctx.fillText(String(n - i), pad * 0.35, p);
+  }
+  const stars = n === 19 ? [3,9,15] : n === 13 ? [3,6,9] : [2,4,6];
+  ctx.fillStyle = '#000';
+  for (const sy of stars) for (const sx of stars) {
+    ctx.beginPath(); ctx.arc(pad + sx*step, pad + sy*step, 3, 0, 7); ctx.fill();
+  }
+  const r = step * 0.47;
+  let lastCoord = null;
+  if (S.last_move && S.last_move !== 'pass') {
+    lastCoord = [COLS.indexOf(S.last_move[0]), n - parseInt(S.last_move.slice(1))];
+  }
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const v = S.board[y][x];
+    if (!v) continue;
+    const cx = pad + x*step, cy = pad + y*step;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7);
+    ctx.fillStyle = v === 1 ? '#111' : '#fafafa';
+    ctx.fill();
+    ctx.strokeStyle = '#00000060'; ctx.stroke();
+    if (lastCoord && lastCoord[0] === x && lastCoord[1] === y) {
+      ctx.beginPath(); ctx.arc(cx, cy, r*0.45, 0, 7);
+      ctx.strokeStyle = v === 1 ? '#fff' : '#111'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.lineWidth = 1;
+    }
+  }
+  for (const [hx, hy] of highlights) {
+    const cx = pad + hx*step, cy = pad + hy*step;
+    ctx.beginPath(); ctx.arc(cx, cy, r*0.8, 0, 7);
+    ctx.strokeStyle = 'rgba(180, 60, 40, 0.75)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.lineWidth = 1;
+  }
+  const myColor = S.player_color === 'black' ? 1 : 2;
+  if (hover && !S.game_over && S.to_move === myColor && S.board[hover[1]][hover[0]] === 0) {
+    const cx = pad + hover[0]*step, cy = pad + hover[1]*step;
+    ctx.globalAlpha = 0.45;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7);
+    ctx.fillStyle = myColor === 1 ? '#111' : '#fafafa';
+    ctx.fill();
+    ctx.strokeStyle = '#00000060'; ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  document.getElementById('turn-label').textContent =
+    S.game_over ? 'Game over' : (S.to_move === 1 ? 'Black to move' : 'White to move');
+  if (S.winrate_black != null) {
+    const wb = S.winrate_black * 100;
+    document.getElementById('winrate-bar').style.width = wb.toFixed(1) + '%';
+    document.getElementById('winrate-label').textContent =
+      wb >= 50 ? `B ${wb.toFixed(0)}%` : `W ${(100 - wb).toFixed(0)}%`;
+    const lead = S.score_lead_black;
+    document.getElementById('score-label').textContent =
+      (lead >= 0 ? 'B' : 'W') + '+' + Math.abs(lead).toFixed(1);
+  }
+}
+
+canvas.addEventListener('mousemove', e => {
+  if (!S) return;
+  const rect = canvas.getBoundingClientRect();
+  const n = S.size, W = canvas.width;
+  const pad = W/(n+1), step = (W-2*pad)/(n-1);
+  const x = Math.round(((e.clientX-rect.left) * (W/rect.width) - pad) / step);
+  const y = Math.round(((e.clientY-rect.top) * (W/rect.height) - pad) / step);
+  const nh = (x >= 0 && y >= 0 && x < n && y < n) ? [x, y] : null;
+  if (JSON.stringify(nh) !== JSON.stringify(hover)) { hover = nh; drawBoard(); }
+});
+
+canvas.addEventListener('mouseleave', () => { hover = null; drawBoard(); });
+
+canvas.addEventListener('click', async e => {
+  if (!S || S.game_over) return;
+  const myColor = S.player_color === 'black' ? 1 : 2;
+  if (S.to_move !== myColor) return;
+  const rect = canvas.getBoundingClientRect();
+  const n = S.size, W = canvas.width;
+  const pad = W/(n+1), step = (W-2*pad)/(n-1);
+  const x = Math.round(((e.clientX-rect.left) * (W/rect.width) - pad) / step);
+  const y = Math.round(((e.clientY-rect.top) * (W/rect.height) - pad) / step);
+  if (x < 0 || y < 0 || x >= n || y >= n) return;
+  await doPlay({x, y});
+});
+
+async function doPlay(body) {
+  body.auto_comment = document.getElementById('auto-toggle').checked;
+  body.model = document.getElementById('coach-model').value;
+  const thinking = addMsg('...', 'system');
+  const resp = await fetch('/play', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const d = await resp.json();
+  thinking.remove();
+  if (d.error) { addMsg(d.error, 'system'); return; }
+  highlights = [];
+  S = d; drawBoard();
+  if (d.auto_comment) { addMsg(d.auto_comment, 'coach', 'Auto-comment'); setHighlights(d.auto_comment); }
+  if (d.game_over) addMsg('Game over (two passes). Ask the coach for a game summary!', 'system');
+}
+
+async function passMove() { if (S && !S.game_over) await doPlay({pass: true}); }
+
+async function newGame() {
+  const body = {
+    size: document.getElementById('size').value,
+    rank: document.getElementById('rank').value,
+    player_color: document.getElementById('color').value,
+    komi: 6.5
+  };
+  document.getElementById('chat').innerHTML = '';
+  addMsg('Starting new game...', 'system');
+  const resp = await fetch('/new_game', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  S = await resp.json();
+  drawBoard();
+  addMsg('Game on. Good luck!', 'system');
+}
+
+async function coachAction(mode) {
+  const labels = {comment: 'Comment', hint: 'Hint', suggest: 'Suggest move'};
+  const thinking = addMsg('Coach is thinking...', 'system');
+  const model = document.getElementById('coach-model').value;
+  const resp = await fetch('/coach', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode, model})});
+  const d = await resp.json();
+  thinking.remove();
+  addMsg(d.text, 'coach', labels[mode]);
+  setHighlights(d.text);
+}
+
+async function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addMsg(text, 'user');
+  const thinking = addMsg('Coach is thinking...', 'system');
+  const model = document.getElementById('coach-model').value;
+  const resp = await fetch('/coach', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({mode:'chat', question:text, model})});
+  const d = await resp.json();
+  thinking.remove();
+  addMsg(d.text, 'coach', 'Reply');
+  setHighlights(d.text);
+}
+</script>
+</body>
+</html>
