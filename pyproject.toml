@@ -1,0 +1,6 @@
+# Tooling configuration for the Go Teacher project.
+
+[tool.black]
+# 88 is Black's default line length; pinned here so every contributor and
+# editor formats identically regardless of any global Black settings.
+line-length = 88

@@ -12,10 +12,16 @@ import os
 # which module this constant is imported from.
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-KATAGO_EXE = os.path.join(PROJECT_ROOT, "katago", "katago.exe")                     # path to katago.exe
-MAIN_MODEL = os.path.join(PROJECT_ROOT, "katago", "kata1-b18c384nbt-latest.bin.gz")  # main network
-HUMAN_MODEL = os.path.join(PROJECT_ROOT, "katago", "b18c384nbt-humanv0.bin.gz")      # human-style network
-ANTHROPIC_API_KEY = ""   # leave "" - key is read from env var or .env file (see coach.py)
+KATAGO_EXE = os.path.join(PROJECT_ROOT, "katago", "katago.exe")  # path to katago.exe
+MAIN_MODEL = os.path.join(
+    PROJECT_ROOT, "katago", "kata1-b18c384nbt-latest.bin.gz"
+)  # main network
+HUMAN_MODEL = os.path.join(
+    PROJECT_ROOT, "katago", "b18c384nbt-humanv0.bin.gz"
+)  # human-style network
+ANTHROPIC_API_KEY = (
+    ""  # leave "" - key is read from env var or .env file (see coach.py)
+)
 
 # Coach models selectable from the UI (label -> API model string).
 COACH_MODELS = {
@@ -26,4 +32,4 @@ COACH_MODELS = {
 DEFAULT_COACH_MODEL = COACH_MODELS["Sonnet"]
 
 PORT = 8123
-ANALYSIS_VISITS = 150    # visits per analysis query (higher = stronger/slower)
+ANALYSIS_VISITS = 150  # visits per analysis query (higher = stronger/slower)
