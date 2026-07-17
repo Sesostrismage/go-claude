@@ -31,8 +31,12 @@ class KataGo:
             print("         main network with reduced visits instead.")
         print("Starting KataGo (first OpenCL run may take a few minutes to tune)...")
         self.proc = subprocess.Popen(
-            cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True, bufsize=1
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
         )
         self.lock = threading.Lock()
         self.query_id = 0
@@ -58,11 +62,18 @@ class KataGo:
             sys.exit(1)
         print("KataGo is ready.")
 
-    def query(self, game: Game, max_visits=ANALYSIS_VISITS, include_policy=False,
-              human_profile=None):
+    def query(
+        self,
+        game: Game,
+        max_visits=ANALYSIS_VISITS,
+        include_policy=False,
+        human_profile=None,
+    ):
         with self.lock:
             if self.proc.poll() is not None:
-                raise RuntimeError("KataGo process has exited. Restart the server and check the [katago] log lines for errors.")
+                raise RuntimeError(
+                    "KataGo process has exited. Restart the server and check the [katago] log lines for errors."
+                )
             self.query_id += 1
             qid = f"q{self.query_id}"
             q = {
@@ -97,8 +108,9 @@ class KataGo:
 
     def pick_human_move(self, game: Game):
         """Sample the AI opponent's move from the human-style policy."""
-        resp = self.query(game, max_visits=40, include_policy=True,
-                          human_profile=game.rank)
+        resp = self.query(
+            game, max_visits=40, include_policy=True, human_profile=game.rank
+        )
         policy = resp.get("humanPolicy") or resp.get("policy")
         legal = game.legal_moves_mask()
         candidates = []

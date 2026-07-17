@@ -85,7 +85,9 @@ def comment_payload():
     before, after = user_move_indices()
     cur = len(game.analysis_history) - 1
     ks = sorted({k for k in (before, after, cur) if k is not None})
-    return [(k, game.analysis_history[k]) for k in ks], point_loss_between(before, after)
+    return [(k, game.analysis_history[k]) for k in ks], point_loss_between(
+        before, after
+    )
 
 
 def do_ai_move():
@@ -114,8 +116,12 @@ def new_game():
     global game
     d = request.json
     with state_lock:
-        game = Game(size=int(d["size"]), komi=float(d["komi"]),
-                    player_color=d["player_color"], rank=d["rank"])
+        game = Game(
+            size=int(d["size"]),
+            komi=float(d["komi"]),
+            player_color=d["player_color"],
+            rank=d["rank"],
+        )
         coach.chat_history = []
         analyze_and_store()
         ai_move_info = None
@@ -146,14 +152,17 @@ def play():
         auto_comment = None
         if d.get("auto_comment"):
             snaps, loss = comment_payload()
-            auto_comment = coach.ask("comment", game, snaps, loss,
-                                     model=d.get("model"))
+            auto_comment = coach.ask("comment", game, snaps, loss, model=d.get("model"))
 
-        return jsonify(board_state({
-            "ai_move": ai_move_info,
-            "user_point_loss": user_loss,
-            "auto_comment": auto_comment,
-        }))
+        return jsonify(
+            board_state(
+                {
+                    "ai_move": ai_move_info,
+                    "user_point_loss": user_loss,
+                    "auto_comment": auto_comment,
+                }
+            )
+        )
 
 
 @app.route("/coach", methods=["POST"])

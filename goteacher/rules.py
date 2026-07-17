@@ -13,7 +13,7 @@ class Game:
         self.rank = rank
         self.board = [[0] * size for _ in range(size)]  # 0 empty, 1 black, 2 white
         self.to_move = 1  # black starts
-        self.moves = []   # list of ("B"/"W", "D4"/"pass")
+        self.moves = []  # list of ("B"/"W", "D4"/"pass")
         self.captures = {1: 0, 2: 0}
         self.position_hashes = {self._hash()}
         self.consecutive_passes = 0
@@ -22,7 +22,9 @@ class Game:
 
     def _hash(self):
         return hashlib.md5(
-            (str(self.to_move) + "".join("".join(map(str, r)) for r in self.board)).encode()
+            (
+                str(self.to_move) + "".join("".join(map(str, r)) for r in self.board)
+            ).encode()
         ).hexdigest()
 
     def _neighbors(self, x, y):

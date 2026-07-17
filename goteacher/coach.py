@@ -77,9 +77,15 @@ class Coach:
             if game.moves[i][0] == user_letter:
                 user_move = f"{game.moves[i][0]} {game.moves[i][1]} (move {i+1})"
                 if i + 1 < len(game.moves):
-                    opp_reply = f"{game.moves[i+1][0]} {game.moves[i+1][1]} (move {i+2})"
+                    opp_reply = (
+                        f"{game.moves[i+1][0]} {game.moves[i+1][1]} (move {i+2})"
+                    )
                 break
-        loss_str = f"{point_loss:+.1f} points vs best move" if point_loss is not None else "n/a"
+        loss_str = (
+            f"{point_loss:+.1f} points vs best move"
+            if point_loss is not None
+            else "n/a"
+        )
         perspective = (
             "Weppe is BLACK, so higher Black winrate = better for Weppe."
             if game.player_color == "black"
@@ -90,7 +96,8 @@ class Coach:
             desc, to_move = self._describe_position(game, k)
             current_note = (
                 " This is the CURRENT position: these numbers are what Weppe's on-screen winrate bar and score show right now."
-                if k == len(game.moves) else ""
+                if k == len(game.moves)
+                else ""
             )
             sections.append(
                 f"KataGo analysis of {desc}. {to_move} was to move in this position, so the candidate moves below are options for {to_move} only.{current_note}\n"
@@ -138,6 +145,11 @@ Ground everything you say in this analysis - do not invent evaluations. Be conci
         # Stamp history entries with the move count so earlier answers (about
         # earlier positions) can't be mistaken for current-position advice.
         stamp = f"(asked at move {len(game.moves)}) "
-        self.chat_history.append({"role": "user", "content": stamp + (instructions[mode] if mode != "chat" else question)})
+        self.chat_history.append(
+            {
+                "role": "user",
+                "content": stamp + (instructions[mode] if mode != "chat" else question),
+            }
+        )
         self.chat_history.append({"role": "assistant", "content": text})
         return text
