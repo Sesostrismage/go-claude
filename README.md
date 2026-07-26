@@ -157,6 +157,26 @@ marked as the one matching the on-screen winrate bar. This keeps the coach from
 confusing whose move was whose or mixing up an earlier position with the one in
 front of you.
 
+Alongside the winrate and score, the coach receives KataGo's **expected
+continuation** for each candidate move (so it can cite the sequence the engine
+actually predicts instead of imagining one) and a regional summary of KataGo's
+**ownership estimate** (so claims about whose area is whose come from the
+engine). It is instructed to treat all of these as authoritative over its own
+impression of the board, and to say so plainly rather than guess when something
+would require reading out a sequence.
+
+### A caveat worth reading
+
+The numbers are trustworthy — point loss, winrate, score lead, and which move
+KataGo prefers are engine output passed through unchanged. The *explanations*
+are a language model's narration of those numbers, and that layer is the weak
+link: LLMs are unreliable at Go-specific reasoning and can produce fluent,
+plausible-sounding commentary that is simply wrong, especially about ladders,
+capturing races, and life and death. The measures above narrow the room for
+invention but do not eliminate it. Treat the coach as a helpful study partner
+that is sometimes confidently mistaken, not as an authority — and if a stronger
+player tells you it said something silly, believe the player.
+
 ## Troubleshooting
 
 - **"KataGo exited during startup."** Almost always a wrong model path or a

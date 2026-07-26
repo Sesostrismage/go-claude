@@ -10,7 +10,7 @@ except ImportError:
     sys.exit(1)
 
 from .config import ANTHROPIC_API_KEY, COACH_MODELS, DEFAULT_COACH_MODEL, PROJECT_ROOT
-from .rules import Game
+from .rules import GTP_COLS, Game
 
 
 class Coach:
@@ -42,11 +42,48 @@ class Coach:
             f"Black score lead: {root.get('scoreLead', 0):+.1f}"
         ]
         for mi in a.get("moveInfos", [])[:4]:
-            lines.append(
+            line = (
                 f"  candidate {mi['move']}: winrate {mi['winrate']*100:.1f}%, "
                 f"score lead {mi['scoreLead']:+.1f}, visits {mi['visits']}"
             )
+            pv = mi.get("pv") or []
+            if pv:
+                # The engine's expected continuation - real sequences the coach
+                # can cite instead of inventing follow-ups.
+                line += f"\n    expected continuation: {' '.join(pv[:6])}"
+            lines.append(line)
         return "\n".join(lines)
+
+    @staticmethod
+    def _fmt_ownership(a, size):
+        """Summarise KataGo's ownership map by board region.
+
+        `ownership` holds one value per intersection in [-1, 1], Black-positive,
+        row-major from the top-left of the board as displayed. Summing a region
+        gives its net points (stones included, komi excluded). Aggregating into
+        regions keeps this readable - a raw array of hundreds of floats is not
+        something the coach can reason over reliably.
+        """
+        own = (a or {}).get("ownership")
+        if not own or len(own) != size * size:
+            return None
+        cuts = [(0, size // 3), (size // 3, 2 * size // 3), (2 * size // 3, size)]
+        parts = []
+        for y0, y1 in cuts:
+            for x0, x1 in cuts:
+                net = sum(
+                    own[y * size + x] for y in range(y0, y1) for x in range(x0, x1)
+                )
+                cols = f"{GTP_COLS[x0]}-{GTP_COLS[x1 - 1]}"
+                rows = f"{size - y1 + 1}-{size - y0}"
+                parts.append(f"{cols}/{rows}: {net:+.1f}")
+        return (
+            "KataGo ownership estimate for the CURRENT position, by region "
+            "(Black positive, in points, stones included, komi excluded). Use "
+            "these for any claim about whose area is whose:\n  "
+            + "; ".join(parts)
+            + f"\n  whole board: {sum(own):+.1f}"
+        )
 
     @staticmethod
     def _describe_position(game: Game, k):
@@ -104,6 +141,15 @@ class Coach:
                 f"{self._fmt_analysis(a)}"
             )
         analysis_block = "\n\n".join(sections) if sections else "No analysis available."
+        # Ownership only for the current position - it is what the player is
+        # deciding about now, and repeating it per snapshot would bloat the prompt.
+        current = next(
+            (a for k, a in snapshots if k == len(game.moves)),
+            snapshots[-1][1] if snapshots else None,
+        )
+        own_block = self._fmt_ownership(current, game.size)
+        if own_block:
+            analysis_block += "\n\n" + own_block
         return f"""You are a friendly, direct Go teacher coaching the player during a live game on a {game.size}x{game.size} board. The player plays {game.player_color}. The opponent is an AI playing at human {game.rank.replace('rank_', '')} level. Komi {game.komi}.
 
 Current board (the position after ALL moves listed below):
@@ -120,7 +166,13 @@ IMPORTANT: Moves marked "{user_letter}" are the player's; the other color is the
 
 All winrates and score leads are from BLACK's perspective. {perspective}
 When citing winrates, always say which position they belong to (before your move / after your move / now). The numbers the player sees on screen belong to the CURRENT position only.
-Ground everything you say in this analysis - do not invent evaluations. Be concise (2-4 sentences unless asked for more). Talk like a teacher at the board, not a textbook."""
+HOW TO STAY ACCURATE - this matters more than sounding knowledgeable:
+- The KataGo numbers, expected continuations, and ownership estimates above are AUTHORITATIVE. If your own impression of the board disagrees with them, the numbers are right and you are wrong. Never contradict them.
+- Do not invent evaluations, sequences, or territory claims. When describing what happens after a move, cite the expected continuation given above rather than imagining your own. If no continuation is listed for a move, do not speculate about one.
+- You are reading an ASCII grid, and your spatial reading is unreliable. Do NOT assert conclusions that require reading out a sequence - ladders, capturing races, life-and-death status, connectivity, or whether a group is alive or dead - unless the analysis above directly supports it. These are exactly the claims you are most likely to get confidently wrong.
+- Say plainly when you are unsure or when something depends on reading it out ("I can't verify that from the analysis"). An honest "I'm not certain" is more useful to the player than a confident explanation you cannot support, and they are learning from you.
+
+Be concise (2-4 sentences unless asked for more). Talk like a teacher at the board, not a textbook."""
 
     def ask(self, mode, game, snapshots, point_loss, question=None, model=None):
         """Ask the coach. snapshots is a chronological list of
