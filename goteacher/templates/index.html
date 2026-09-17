@@ -31,6 +31,10 @@ label.opt { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .msg-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #999; margin-bottom: 3px; }
 .msg.user { background: #e3edf7; align-self: flex-end; }
 .msg.system { background: none; color: #999; font-size: 12px; align-self: center; }
+.msg.flag { background: #fbe9e4; color: #7a2a1c; align-self: center; font-size: 12.5px; }
+.moment { display: block; width: 100%; text-align: left; margin-top: 4px; padding: 5px 8px; font-size: 12.5px; }
+.moment.opp { color: #3a6ea5; }
+.moment.own { color: #b43c28; }
 #chat-input-row { padding: 10px 14px; border-top: 1px solid #eee; display: flex; gap: 6px; }
 #chat-input { flex: 1; padding: 8px 10px; font-size: 13px; border: 1px solid #ccc; border-radius: 6px; outline: none; font-family: inherit; }
 </style>
@@ -86,6 +90,7 @@ label.opt { display: flex; align-items: center; gap: 4px; cursor: pointer; }
     <button onclick="coachAction('comment')">Comment</button>
     <button onclick="coachAction('hint')">Hint</button>
     <button onclick="coachAction('suggest')">Suggest move</button>
+    <button id="review-btn" onclick="reviewGame()" disabled title="Available once the game is over">Review game</button>
     <select id="coach-model" title="Coach model">
       {% for label, value in coach_models.items() %}
       <option value="{{ value }}"{% if value == default_coach_model %} selected{% endif %}>{{ label }}</option>
@@ -94,6 +99,8 @@ label.opt { display: flex; align-items: center; gap: 4px; cursor: pointer; }
     <div class="toggle-row">
       <input type="checkbox" id="auto-toggle">
       <label for="auto-toggle">Auto-comment</label>
+      <input type="checkbox" id="flag-toggle" checked title="Tell me right away when KataGo confirms a big mistake">
+      <label for="flag-toggle">Flag big mistakes</label>
     </div>
   </div>
   <div id="chat"><div class="msg system">Start a new game to begin.</div></div>
@@ -287,6 +294,7 @@ function updateStatus() {
   document.getElementById('caps-label').textContent =
     `Caps B ${S.captures['1']} / W ${S.captures['2']}`;
   document.getElementById('nav-label').textContent = `${k} / ${N}`;
+  document.getElementById('review-btn').disabled = !S.game_over;
   const wr = viewData ? viewData.winrate_black : S.winrate_black;
   const lead = viewData ? viewData.score_lead_black : S.score_lead_black;
   if (wr != null) {
@@ -320,11 +328,20 @@ function drawGraph() {
     else { gctx.moveTo(px(i), py(w)); started = true; }
   });
   gctx.stroke(); gctx.lineWidth = 1;
+  // Big mistakes: red for the player's, blue for the opponent's.
+  for (const m of (S.key_moments || [])) {
+    const w = S.winrates[m.k];
+    if (w == null) continue;
+    gctx.fillStyle = m.by_player ? '#b43c28' : '#3a6ea5';
+    gctx.beginPath(); gctx.arc(px(m.k), py(w), 4, 0, 7); gctx.fill();
+  }
+  // The position being displayed.
   const k = displayK();
   const wk = S.winrates[k];
   if (wk != null) {
-    gctx.fillStyle = '#b43c28';
-    gctx.beginPath(); gctx.arc(px(k), py(wk), 3.5, 0, 7); gctx.fill();
+    gctx.strokeStyle = '#222'; gctx.lineWidth = 2;
+    gctx.beginPath(); gctx.arc(px(k), py(wk), 4.5, 0, 7); gctx.stroke();
+    gctx.lineWidth = 1;
   }
 }
 
@@ -395,8 +412,14 @@ canvas.addEventListener('click', async e => {
   await doPlay({x, y});
 });
 
+function describeSwing(m) {
+  const wr = m.wr_drop >= 0.005 ? `, winrate down ${(m.wr_drop * 100).toFixed(0)}%` : '';
+  return `Move ${m.move_no} (${m.gtp}): about ${m.loss.toFixed(1)} points lost${wr}. KataGo preferred ${m.best_move}.`;
+}
+
 async function doPlay(body) {
   body.auto_comment = document.getElementById('auto-toggle').checked;
+  body.flag_mistakes = document.getElementById('flag-toggle').checked;
   body.model = document.getElementById('coach-model').value;
   const thinking = addMsg('...', 'system');
   const resp = await fetch('/play', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
@@ -407,9 +430,39 @@ async function doPlay(body) {
   pending = null;
   viewData = null;
   S = d; drawBoard();
+  if (d.flagged_mistake && body.flag_mistakes) {
+    addMsg('KataGo flags a big mistake. ' + describeSwing(d.flagged_mistake), 'flag');
+  }
   if (d.auto_comment) { addMsg(d.auto_comment, 'coach', 'Auto-comment'); setHighlights(d.auto_comment); }
+  if (d.mistake_comment) { addMsg(d.mistake_comment, 'coach', 'Big mistake'); setHighlights(d.mistake_comment); }
   if (d.game_over) {
-    addMsg('Game over' + (d.result ? ': ' + d.result : '') + '. Ask the coach for a game summary!', 'system');
+    addMsg('Game over' + (d.result ? ': ' + d.result : '') + '.', 'system');
+    await reviewGame();
+  }
+}
+
+async function reviewGame() {
+  if (!S || !S.game_over) return;
+  const thinking = addMsg('Reviewing the game (re-checking the key moments with a deeper search)...', 'system');
+  const model = document.getElementById('coach-model').value;
+  const resp = await fetch('/review', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({model})});
+  const d = await resp.json();
+  thinking.remove();
+  if (d.error) { addMsg(d.error, 'system'); return; }
+  // The confirmation step may have sharpened the numbers - refresh the graph.
+  S = d; viewData = null; drawBoard();
+  addMsg(d.text, 'coach', 'Game review');
+  setHighlights(d.text);
+  if (d.moments && d.moments.length) {
+    const el = addMsg('Click a moment to view that position on the board.', 'coach', 'Key moments');
+    for (const m of d.moments) {
+      const b = document.createElement('button');
+      b.className = 'moment ' + (m.by_player ? 'own' : 'opp');
+      b.textContent = (m.by_player ? 'You, ' : 'Opponent, ') + describeSwing(m);
+      b.onclick = () => navTo(m.k);
+      el.appendChild(b);
+    }
+    el.scrollIntoView({behavior:'smooth', block:'nearest'});
   }
 }
 
@@ -433,6 +486,7 @@ async function resignGame() {
   viewData = null; pending = null;
   drawBoard();
   addMsg('You resigned. Result: ' + S.result, 'system');
+  await reviewGame();
 }
 
 function downloadSgf() {
