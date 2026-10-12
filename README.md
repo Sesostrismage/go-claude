@@ -22,6 +22,18 @@ real KataGo analysis rather than invented evaluations.
   - **Suggest move** — the top KataGo candidate with coordinates and a plain
     explanation of why it works.
   - **Chat** — ask the coach anything about the position.
+- **A coach that remembers the game.** Every coach reply sees KataGo's
+  score trajectory and a ledger of the biggest swings so far (yours and the
+  opponent's), so when the position is bad it says *where* it went wrong
+  rather than just giving the best advice for a lost position.
+- **Big-mistake flags.** When a move loses more than a few points (or a big
+  chunk of winrate), KataGo re-checks it with a deeper search, marks it on
+  the winrate graph, and, if **Flag big mistakes** is on, the coach tells you
+  straight away what it cost and what was better.
+- **Post-game review.** When the game ends (or on **Review game**), the key
+  moments are re-analysed and the coach walks through the two or three that
+  decided the game. Each moment is a button that jumps the board to that
+  position.
 - **Auto-comment toggle.** Have the coach comment automatically after each of
   your moves.
 - **Live winrate and score bar** under the board, plus capture counts, and a
@@ -117,6 +129,13 @@ During and after the game: use **Undo / Resign / SGF** in the status bar, the
 the **Confirm moves / Move numbers / Territory** checkboxes to tune the board.
 Reviewing never alters the game — jump back to the latest move to keep
 playing.
+
+Big mistakes show up as dots on the winrate graph (red for yours, blue for
+the opponent's). Leave **Flag big mistakes** on to have the coach speak up as
+soon as one is confirmed, or turn it off to find out only when you ask or at
+the end. The game review runs automatically when the game ends; **Review
+game** runs it again. The detection thresholds and the depth of the
+confirming search are in `goteacher/config.py`.
 
 ## Configuration
 

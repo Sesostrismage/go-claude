@@ -33,3 +33,13 @@ DEFAULT_COACH_MODEL = COACH_MODELS["Sonnet"]
 
 PORT = 8123
 ANALYSIS_VISITS = 150  # visits per analysis query (higher = stronger/slower)
+
+# Big-mistake detection. A move is flagged when it loses at least this many
+# points versus KataGo's best move (by board size - a few points matter more
+# on a small board) OR drops the mover's winrate by at least MISTAKE_WINRATE.
+# Because ANALYSIS_VISITS is shallow enough for a point or two of noise, a
+# suspected mistake is re-analysed at MISTAKE_CONFIRM_VISITS before being
+# flagged; the deeper analysis replaces the stored one.
+MISTAKE_POINTS_BY_SIZE = {9: 3.0, 13: 3.5, 19: 4.0}
+MISTAKE_WINRATE = 0.12
+MISTAKE_CONFIRM_VISITS = 600

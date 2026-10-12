@@ -9,6 +9,7 @@ except ImportError:
     print("Missing dependency: pip install anthropic")
     sys.exit(1)
 
+from . import review
 from .config import ANTHROPIC_API_KEY, COACH_MODELS, DEFAULT_COACH_MODEL, PROJECT_ROOT
 from .rules import GTP_COLS, Game
 
@@ -86,6 +87,62 @@ class Coach:
         )
 
     @staticmethod
+    def _fmt_trajectory(game: Game):
+        """Black's score lead after every move - the shape of the whole game
+        in one line, so slow bleeds are visible as well as single blunders."""
+        leads = [a.get("rootInfo", {}).get("scoreLead") for a in game.analysis_history]
+        if len(leads) < 2:
+            return None
+        parts = [f"{k}:{lead:+.0f}" for k, lead in enumerate(leads) if lead is not None]
+        return (
+            "Black score lead after each move so far, as move:lead (0 = the "
+            "empty board), from KataGo:\n  " + " ".join(parts)
+        )
+
+    @staticmethod
+    def _fmt_key_moments(game: Game):
+        """The biggest swings so far, as KataGo measured them. This is the
+        coach's memory of the game: without it, it can only judge the latest
+        move and the current position."""
+        moments = review.key_moments(game)
+        if not moments:
+            return (
+                "KEY MOMENTS SO FAR: none. KataGo has not flagged a serious "
+                "mistake by either side yet."
+            )
+        lines = [
+            "KEY MOMENTS SO FAR, identified by KataGo (the biggest swings of the "
+            "game; 'lost' = points the mover gave away compared with KataGo's best "
+            "move at the time; 'game-changing' = a large winrate swing; "
+            "'confirmed' = re-checked with a deeper search):"
+        ]
+        n = len(game.moves)
+        for m in moments:
+            who = "the player" if m["by_player"] else "the AI opponent"
+            tags = []
+            if m["wr_drop"] >= review.MISTAKE_WINRATE:
+                tags.append("game-changing")
+            if m["confirmed"]:
+                tags.append("confirmed")
+            if m["index"] == n - 1 or (m["by_player"] and m["index"] == n - 2):
+                tags.append(
+                    "the player's most recent move"
+                    if m["by_player"]
+                    else "the latest move"
+                )
+            tag_str = f" [{', '.join(tags)}]" if tags else ""
+            line = (
+                f"- Move {m['move_no']} ({m['color']} {m['gtp']}, {who}): lost "
+                f"{m['loss']:.1f} points, Black winrate "
+                f"{m['wr_before'] * 100:.0f}% -> {m['wr_after'] * 100:.0f}%{tag_str}. "
+                f"KataGo preferred {m['best_move']}"
+            )
+            if m["best_pv"]:
+                line += f"; expected continuation {' '.join(m['best_pv'])}"
+            lines.append(line + ".")
+        return "\n".join(lines)
+
+    @staticmethod
     def _describe_position(game: Game, k):
         """Describe the position that analysis_history[k] refers to: the
         position after the first k moves of the game. Returns (description,
@@ -150,6 +207,10 @@ class Coach:
         own_block = self._fmt_ownership(current, game.size)
         if own_block:
             analysis_block += "\n\n" + own_block
+        memory_block = self._fmt_key_moments(game)
+        trajectory = self._fmt_trajectory(game)
+        if trajectory:
+            memory_block = trajectory + "\n\n" + memory_block
         return f"""You are a friendly, direct Go teacher coaching the player during a live game on a {game.size}x{game.size} board. The player plays {game.player_color}. The opponent is an AI playing at human {game.rank.replace('rank_', '')} level. Komi {game.komi}.
 
 Current board (the position after ALL moves listed below):
@@ -162,6 +223,8 @@ The opponent's reply after it: {opp_reply or 'none yet'}
 
 IMPORTANT: Moves marked "{user_letter}" are the player's; the other color is the AI opponent's. Never attribute the opponent's moves to the player or vice versa. When discussing an earlier position, remember which stones had NOT yet been played at that time - e.g. in the position before the player's most recent move, neither that move nor the opponent's reply was on the board.
 
+{memory_block}
+
 {analysis_block}
 
 All winrates and score leads are from BLACK's perspective. {perspective}
@@ -171,20 +234,28 @@ HOW TO STAY ACCURATE - this matters more than sounding knowledgeable:
 - Do not invent evaluations, sequences, or territory claims. When describing what happens after a move, cite the expected continuation given above rather than imagining your own. If no continuation is listed for a move, do not speculate about one.
 - You are reading an ASCII grid, and your spatial reading is unreliable. Do NOT assert conclusions that require reading out a sequence - ladders, capturing races, life-and-death status, connectivity, or whether a group is alive or dead - unless the analysis above directly supports it. These are exactly the claims you are most likely to get confidently wrong.
 - Say plainly when you are unsure or when something depends on reading it out ("I can't verify that from the analysis"). An honest "I'm not certain" is more useful to the player than a confident explanation you cannot support, and they are learning from you.
+COACH WITH MEMORY - a real teacher remembers the whole game, not just the latest move:
+- If the position is bad for the player, say WHERE it went wrong, using the key moments above (move number and what was better). Do not blame the latest move for damage done earlier, and do not give "best advice for a bad position" without noting how it became bad.
+- If the player is ahead mainly because the opponent blundered, say so rather than praising the player's play.
+- The key moments were measured by KataGo, not by you. Do not promote other moves to "mistakes" on your own impression, and do not call a move a mistake if it is not listed and its cost was small.
 
 Be concise (2-4 sentences unless asked for more). Talk like a teacher at the board, not a textbook."""
 
     def ask(self, mode, game, snapshots, point_loss, question=None, model=None):
         """Ask the coach. snapshots is a chronological list of
-        (moves_played, analysis) pairs taken from game.analysis_history."""
+        (moves_played, analysis) pairs taken from game.analysis_history.
+        `question` is the player's question in chat mode and the game result
+        in review mode."""
         if not self.client:
             return "Coach unavailable: no API key configured."
         # Only accept models offered in the UI; anything else falls back to the default.
         model = model if model in COACH_MODELS.values() else DEFAULT_COACH_MODEL
         instructions = {
-            "comment": "Comment on the player's most recent move: was it good, questionable, or a mistake? Why? Reference what the position needed.",
+            "comment": "Comment on the player's most recent move: was it good, questionable, or a mistake? Why? Reference what the position needed. If the move itself was fine but the position is already bad, say so and point to the earlier key moment that caused it.",
             "hint": "The player wants a hint for the CURRENT position (it is their turn). Do NOT reveal any specific move or coordinates. Give a Socratic, directional hint - e.g. which area deserves attention, or what question to ask about the position.",
             "suggest": "Suggest the best move for the player in the current position (use the top KataGo candidate from the CURRENT position's analysis), give its coordinates, and explain in plain terms WHY it works and what it accomplishes.",
+            "mistake": "KataGo has just flagged the player's most recent move as a serious mistake (see its estimated cost above; the deeper search confirmed it). Tell the player plainly what it cost and what KataGo preferred instead and why, citing the expected continuation. If the damage can still be limited, say what to focus on now. 2-4 sentences.",
+            "review": f"The game is over (result: {question or 'unknown'}). Give a post-game review the way a teacher goes over a game afterwards. Walk through the key moments listed above in chronological order - at most three, the ones that mattered most - and for each give the move number, what it cost, and what KataGo preferred and why, citing its expected continuation. The analysis snapshots above are the positions just BEFORE those moves, so their candidate lists show what was available. If the opponent's blunders decided the game, say so honestly. If there were no key moments, say the game was decided by small losses and use the score trajectory to say where. Finish with the single most useful lesson for the player. Up to about 200 words.",
             "chat": f"The player asks: {question}",
         }
         prompt = self._base_context(game, snapshots, point_loss)

@@ -31,6 +31,7 @@ the goteacher/ package:
   goteacher/rules.py     - Go rules and board state (Game)
   goteacher/engine.py    - KataGo process wrapper
   goteacher/coach.py     - Claude-powered coach
+  goteacher/review.py    - swing ledger: which moves changed the game
   goteacher/server.py    - Flask app, routes, and main()
   goteacher/templates/   - browser frontend (index.html)
 """
